@@ -44,7 +44,9 @@ import {
   usersIcon,
   share,
   youtubeIcon,
+  save as saveIcon,
 } from "@excalidraw/excalidraw/components/icons";
+import { FilledButton } from "@excalidraw/excalidraw/components/FilledButton";
 import { isElementLink } from "@excalidraw/element";
 import { restore, restoreAppState } from "@excalidraw/excalidraw/data/restore";
 import { newElementWith } from "@excalidraw/element";
@@ -1112,17 +1114,32 @@ const ExcalidrawWrapper = () => {
                 </>
               )}
               {showPersistentUI && (
-                <div className="save-status-indicator">
-                  {saveStatus === "saving" && (
-                    <span className="save-status saving">Saving...</span>
-                  )}
-                  {saveStatus === "saved" && (
-                    <span className="save-status saved">Saved</span>
-                  )}
-                  {saveStatus === "error" && (
-                    <span className="save-status error">Save Error</span>
-                  )}
-                </div>
+                <>
+                  <FilledButton
+                    onClick={handleManualSave}
+                    label="Save"
+                    icon={saveIcon}
+                    size="medium"
+                    status={
+                      saveStatus === "saving"
+                        ? "loading"
+                        : saveStatus === "saved"
+                        ? "success"
+                        : null
+                    }
+                  />
+                  <div className="save-status-indicator">
+                    {saveStatus === "saving" && (
+                      <span className="save-status saving">Saving...</span>
+                    )}
+                    {saveStatus === "saved" && (
+                      <span className="save-status saved">Saved</span>
+                    )}
+                    {saveStatus === "error" && (
+                      <span className="save-status error">Save Error</span>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           );
