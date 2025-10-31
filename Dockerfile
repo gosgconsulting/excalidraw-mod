@@ -2,6 +2,9 @@ FROM --platform=${BUILDPLATFORM} node:18 AS build
 
 WORKDIR /opt/node_app
 
+# Install yarn globally
+RUN npm install -g yarn
+
 COPY . .
 
 # do not ignore optional dependencies:
