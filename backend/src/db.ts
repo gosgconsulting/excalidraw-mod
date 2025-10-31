@@ -1,6 +1,7 @@
+import path from "path";
+
 import { Pool } from "pg";
 import dotenv from "dotenv";
-import path from "path";
 
 import type { PoolClient, QueryResultRow } from "pg";
 
@@ -32,7 +33,9 @@ const poolConfig = process.env.DATABASE_URL
 if (process.env.DATABASE_URL) {
   console.log("[testing] Using DATABASE_URL for database connection");
 } else {
-  console.log("[testing] Using individual DB parameters for database connection");
+  console.log(
+    "[testing] Using individual DB parameters for database connection",
+  );
   console.log("[testing] DB_HOST:", process.env.DB_HOST || "localhost");
 }
 
