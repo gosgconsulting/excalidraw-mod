@@ -42,7 +42,6 @@ import {
   DiscordIcon,
   ExcalLogo,
   usersIcon,
-  exportToPlus,
   share,
   youtubeIcon,
 } from "@excalidraw/excalidraw/components/icons";
@@ -95,10 +94,6 @@ import Collab, {
 import { AppFooter } from "./components/AppFooter";
 import { AppMainMenu } from "./components/AppMainMenu";
 import { AppWelcomeScreen } from "./components/AppWelcomeScreen";
-import {
-  ExportToExcalidrawPlus,
-  exportToExcalidrawPlus,
-} from "./components/ExportToExcalidrawPlus";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 
 import {
@@ -107,6 +102,11 @@ import {
   isCollaborationLink,
   loadScene,
 } from "./data";
+import {
+  loadPersistentDrawing,
+  createPersistentDrawing,
+  updatePersistentDrawing,
+} from "./data/persistentDrawings";
 
 import { updateStaleImageStatuses } from "./data/FileManager";
 import {
@@ -123,6 +123,11 @@ import {
 } from "./data/LocalData";
 import { isBrowserStorageStateNewer } from "./data/tabSync";
 import { ShareDialog, shareDialogStateAtom } from "./share/ShareDialog";
+import {
+  PersistentLinkDialog,
+  CreatePersistentLinkDialog,
+} from "./components/PersistentLinkDialog";
+import { PersistentLinkExportCard } from "./components/PersistentLinkExportCard";
 import CollabError, { collabErrorIndicatorAtom } from "./collab/CollabError";
 import { useHandleAppTheme } from "./useHandleAppTheme";
 import { getPreferredLanguage } from "./app-language/language-detector";
@@ -218,6 +223,13 @@ const initializeScene = async (opts: {
   );
   const externalUrlMatch = window.location.hash.match(/^#url=(.*)$/);
 
+  // Check for persistent drawing URL pattern: /d/:slug
+  const persistentDrawingMatch =
+    window.location.pathname.match(/^\/d\/([a-z0-9-]+)$/);
+  const persistentSlug = persistentDrawingMatch
+    ? persistentDrawingMatch[1]
+    : null;
+
   const localDataState = importFromLocalStorage();
 
   let scene: RestoredDataState & {
@@ -225,7 +237,21 @@ const initializeScene = async (opts: {
   } = await loadScene(null, null, localDataState);
 
   let roomLinkData = getCollaborationLinkData(window.location.href);
-  const isExternalScene = !!(id || jsonBackendMatch || roomLinkData);
+  const isExternalScene = !!(
+    id ||
+    jsonBackendMatch ||
+    roomLinkData ||
+    persistentSlug
+  );
+
+  // Store persistent drawing result for reuse
+  let persistentDrawingResult: {
+    success: boolean;
+    data?: any;
+    encryptionKey?: string;
+    errorMessage?: string;
+  } | null = null;
+
   if (isExternalScene) {
     if (
       // don't prompt if scene is empty
@@ -241,9 +267,36 @@ const initializeScene = async (opts: {
           jsonBackendMatch[2],
           localDataState,
         );
+      } else if (persistentSlug) {
+        // Load persistent drawing by slug
+        persistentDrawingResult = await loadPersistentDrawing(
+          persistentSlug,
+          localDataState,
+        );
+        if (persistentDrawingResult.success && persistentDrawingResult.data) {
+          scene = {
+            elements: persistentDrawingResult.data.elements || [],
+            appState: persistentDrawingResult.data.appState || {},
+            files: persistentDrawingResult.data.files || {},
+            scrollToContent: true,
+          };
+        } else {
+          // Show error message
+          scene = {
+            elements: [],
+            appState: {
+              ...getDefaultAppState(),
+              errorMessage:
+                persistentDrawingResult.errorMessage ||
+                t("alerts.importBackendFailed"),
+            },
+            files: {},
+          };
+        }
       }
       scene.scrollToContent = true;
-      if (!roomLinkData) {
+      if (!roomLinkData && !persistentSlug) {
+        // Don't replace URL for persistent drawings - keep /d/:slug path
         window.history.replaceState({}, APP_NAME, window.location.origin);
       }
     } else {
@@ -322,14 +375,27 @@ const initializeScene = async (opts: {
       key: roomLinkData.roomKey,
     };
   } else if (scene) {
-    return isExternalScene && jsonBackendMatch
-      ? {
-          scene,
-          isExternalScene,
-          id: jsonBackendMatch[1],
-          key: jsonBackendMatch[2],
-        }
-      : { scene, isExternalScene: false };
+    if (isExternalScene && jsonBackendMatch) {
+      return {
+        scene,
+        isExternalScene,
+        id: jsonBackendMatch[1],
+        key: jsonBackendMatch[2],
+      };
+    } else if (isExternalScene && persistentSlug && persistentDrawingResult) {
+      // Return persistent drawing info with encryption key for updates
+      const encryptionKey =
+        persistentDrawingResult.success && persistentDrawingResult.encryptionKey
+          ? persistentDrawingResult.encryptionKey
+          : "";
+      return {
+        scene,
+        isExternalScene: true,
+        id: persistentSlug,
+        key: encryptionKey,
+      };
+    }
+    return { scene, isExternalScene: false };
   }
   return { scene: null, isExternalScene: false };
 };
@@ -472,6 +538,18 @@ const ExcalidrawWrapper = () => {
     initializeScene({ collabAPI, excalidrawAPI }).then(async (data) => {
       loadImages(data, /* isInitialLoad */ true);
       initialStatePromiseRef.current.promise.resolve(data.scene);
+
+      // Store persistent drawing info if this is a persistent drawing
+      if (
+        data.isExternalScene &&
+        data.id &&
+        window.location.pathname.match(/^\/d\/([a-z0-9-]+)$/)
+      ) {
+        setPersistentSlug(data.id);
+        if (data.key) {
+          setPersistentEncryptionKey(data.key);
+        }
+      }
     });
 
     const onHashChange = async (event: HashChangeEvent) => {
@@ -673,6 +751,182 @@ const ExcalidrawWrapper = () => {
     null,
   );
 
+  // Persistent drawing state
+  const [persistentSlug, setPersistentSlug] = useState<string | null>(null);
+  const [persistentEncryptionKey, setPersistentEncryptionKey] = useState<
+    string | null
+  >(null);
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const [persistentLinkDialogState, setPersistentLinkDialogState] = useState<{
+    showCreate: boolean;
+    showLink: boolean;
+    slug?: string;
+    url?: string;
+  }>({
+    showCreate: false,
+    showLink: false,
+  });
+
+  // Manual save function for persistent drawings
+  const handleManualSave = useCallback(async () => {
+    if (!persistentSlug || !persistentEncryptionKey || !excalidrawAPI) {
+      return;
+    }
+
+    setSaveStatus("saving");
+    try {
+      const elements = excalidrawAPI.getSceneElementsIncludingDeleted();
+      const appState = excalidrawAPI.getAppState();
+      const files = excalidrawAPI.getFiles();
+
+      const result = await updatePersistentDrawing(
+        persistentSlug,
+        elements,
+        appState,
+        files,
+        persistentEncryptionKey,
+      );
+
+      if (result.success) {
+        setSaveStatus("saved");
+        setTimeout(() => setSaveStatus("idle"), 2000);
+      } else {
+        setSaveStatus("error");
+        setErrorMessage(result.errorMessage || "Failed to save drawing");
+        setTimeout(() => setSaveStatus("idle"), 3000);
+      }
+    } catch (error: any) {
+      setSaveStatus("error");
+      setErrorMessage(error.message || "Failed to save drawing");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    }
+  }, [persistentSlug, persistentEncryptionKey, excalidrawAPI]);
+
+  // Keyboard shortcut for manual save (Ctrl/Cmd+S) when persistent drawing is active
+  useEffect(() => {
+    if (!persistentSlug || !persistentEncryptionKey) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check for Ctrl/Cmd+S
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key === "s" &&
+        !event.shiftKey &&
+        !event.altKey
+      ) {
+        // Only handle if not in an input field (to allow normal text editing)
+        const target = event.target as HTMLElement;
+        const isInputField =
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable;
+
+        if (!isInputField) {
+          event.preventDefault();
+          handleManualSave();
+        }
+      }
+    };
+
+    // Use capture phase to intercept before Excalidraw's handler
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [persistentSlug, persistentEncryptionKey, handleManualSave]);
+
+  // Handler for creating/updating persistent links
+  const handleExportToPersistentLink = useCallback(
+    async (
+      elements: readonly NonDeletedExcalidrawElement[],
+      appState: UIAppState,
+      files: BinaryFiles,
+    ) => {
+      if (!excalidrawAPI) {
+        return;
+      }
+
+      if (persistentSlug && persistentEncryptionKey) {
+        // Update existing persistent drawing
+        setSaveStatus("saving");
+        try {
+          const result = await updatePersistentDrawing(
+            persistentSlug,
+            elements,
+            appState,
+            files,
+            persistentEncryptionKey,
+          );
+
+          if (result.success) {
+            setSaveStatus("saved");
+            setTimeout(() => setSaveStatus("idle"), 2000);
+            excalidrawAPI.updateScene({
+              appState: { openDialog: null },
+            });
+          } else {
+            setSaveStatus("error");
+            setErrorMessage(result.errorMessage || "Failed to save drawing");
+          }
+        } catch (error: any) {
+          setSaveStatus("error");
+          setErrorMessage(error.message || "Failed to save drawing");
+        }
+      } else {
+        // Show create dialog
+        setPersistentLinkDialogState({ showCreate: true, showLink: false });
+      }
+    },
+    [persistentSlug, persistentEncryptionKey, excalidrawAPI],
+  );
+
+  // Handler for creating a new persistent link
+  const handleCreatePersistentLink = useCallback(
+    async (slug: string) => {
+      if (!excalidrawAPI) {
+        return;
+      }
+
+      try {
+        const elements = excalidrawAPI.getSceneElementsIncludingDeleted();
+        const appState = excalidrawAPI.getAppState();
+        const files = excalidrawAPI.getFiles();
+
+        const result = await createPersistentDrawing(
+          slug,
+          elements,
+          appState,
+          files,
+        );
+
+        if (result.success && result.data) {
+          setPersistentSlug(result.data.slug);
+          setPersistentEncryptionKey(result.data.encryptionKey);
+          setPersistentLinkDialogState({
+            showCreate: false,
+            showLink: true,
+            slug: result.data.slug,
+            url: result.data.url,
+          });
+          excalidrawAPI.updateScene({
+            appState: { openDialog: null },
+          });
+        } else {
+          setErrorMessage(
+            result.errorMessage || "Failed to create persistent link",
+          );
+        }
+      } catch (error: any) {
+        setErrorMessage(error.message || "Failed to create persistent link");
+      }
+    },
+    [excalidrawAPI],
+  );
+
   const onExportToBackend = async (
     exportedElements: readonly NonDeletedExcalidrawElement[],
     appState: Partial<AppState>,
@@ -814,23 +1068,12 @@ const ExcalidrawWrapper = () => {
               renderCustomUI: excalidrawAPI
                 ? (elements, appState, files) => {
                     return (
-                      <ExportToExcalidrawPlus
+                      <PersistentLinkExportCard
                         elements={elements}
                         appState={appState}
                         files={files}
-                        name={excalidrawAPI.getName()}
-                        onError={(error) => {
-                          excalidrawAPI?.updateScene({
-                            appState: {
-                              errorMessage: error.message,
-                            },
-                          });
-                        }}
-                        onSuccess={() => {
-                          excalidrawAPI.updateScene({
-                            appState: { openDialog: null },
-                          });
-                        }}
+                        persistentSlug={persistentSlug}
+                        onExportToPersistentLink={handleExportToPersistentLink}
                       />
                     );
                   }
@@ -845,18 +1088,42 @@ const ExcalidrawWrapper = () => {
         autoFocus={true}
         theme={editorTheme}
         renderTopRightUI={(isMobile) => {
-          if (isMobile || !collabAPI || isCollabDisabled) {
+          const showCollaborationUI =
+            !isMobile && collabAPI && !isCollabDisabled;
+          const showPersistentUI = !isMobile && persistentSlug;
+
+          if (!showCollaborationUI && !showPersistentUI) {
             return null;
           }
+
           return (
             <div className="top-right-ui">
-              {collabError.message && <CollabError collabError={collabError} />}
-              <LiveCollaborationTrigger
-                isCollaborating={isCollaborating}
-                onSelect={() =>
-                  setShareDialogState({ isOpen: true, type: "share" })
-                }
-              />
+              {showCollaborationUI && (
+                <>
+                  {collabError.message && (
+                    <CollabError collabError={collabError} />
+                  )}
+                  <LiveCollaborationTrigger
+                    isCollaborating={isCollaborating}
+                    onSelect={() =>
+                      setShareDialogState({ isOpen: true, type: "share" })
+                    }
+                  />
+                </>
+              )}
+              {showPersistentUI && (
+                <div className="save-status-indicator">
+                  {saveStatus === "saving" && (
+                    <span className="save-status saving">Saving...</span>
+                  )}
+                  {saveStatus === "saved" && (
+                    <span className="save-status saved">Saved</span>
+                  )}
+                  {saveStatus === "error" && (
+                    <span className="save-status error">Save Error</span>
+                  )}
+                </div>
+              )}
             </div>
           );
         }}
@@ -882,22 +1149,6 @@ const ExcalidrawWrapper = () => {
         <OverwriteConfirmDialog>
           <OverwriteConfirmDialog.Actions.ExportToImage />
           <OverwriteConfirmDialog.Actions.SaveToDisk />
-          {excalidrawAPI && (
-            <OverwriteConfirmDialog.Action
-              title={t("overwriteConfirm.action.excalidrawPlus.title")}
-              actionLabel={t("overwriteConfirm.action.excalidrawPlus.button")}
-              onClick={() => {
-                exportToExcalidrawPlus(
-                  excalidrawAPI.getSceneElements(),
-                  excalidrawAPI.getAppState(),
-                  excalidrawAPI.getFiles(),
-                  excalidrawAPI.getName(),
-                );
-              }}
-            >
-              {t("overwriteConfirm.action.excalidrawPlus.description")}
-            </OverwriteConfirmDialog.Action>
-          )}
         </OverwriteConfirmDialog>
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
         {excalidrawAPI && <AIComponents excalidrawAPI={excalidrawAPI} />}
@@ -1093,24 +1344,6 @@ const ExcalidrawWrapper = () => {
                   },
                 ]
               : [ExcalidrawPlusCommand, ExcalidrawPlusAppCommand]),
-
-            {
-              label: t("overwriteConfirm.action.excalidrawPlus.button"),
-              category: DEFAULT_CATEGORIES.export,
-              icon: exportToPlus,
-              predicate: true,
-              keywords: ["plus", "export", "save", "backup"],
-              perform: () => {
-                if (excalidrawAPI) {
-                  exportToExcalidrawPlus(
-                    excalidrawAPI.getSceneElements(),
-                    excalidrawAPI.getAppState(),
-                    excalidrawAPI.getFiles(),
-                    excalidrawAPI.getName(),
-                  );
-                }
-              },
-            },
             {
               ...CommandPalette.defaultItems.toggleTheme,
               perform: () => {
@@ -1143,6 +1376,33 @@ const ExcalidrawWrapper = () => {
             ref={debugCanvasRef}
           />
         )}
+        {persistentLinkDialogState.showCreate && (
+          <CreatePersistentLinkDialog
+            onCloseRequest={() => {
+              setPersistentLinkDialogState({
+                showCreate: false,
+                showLink: false,
+              });
+            }}
+            onCreate={handleCreatePersistentLink}
+            setErrorMessage={setErrorMessage}
+          />
+        )}
+        {persistentLinkDialogState.showLink &&
+          persistentLinkDialogState.slug &&
+          persistentLinkDialogState.url && (
+            <PersistentLinkDialog
+              slug={persistentLinkDialogState.slug}
+              url={persistentLinkDialogState.url}
+              onCloseRequest={() => {
+                setPersistentLinkDialogState({
+                  showCreate: false,
+                  showLink: false,
+                });
+              }}
+              setErrorMessage={setErrorMessage}
+            />
+          )}
       </Excalidraw>
     </div>
   );
