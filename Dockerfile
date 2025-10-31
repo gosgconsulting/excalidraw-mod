@@ -9,6 +9,10 @@ COPY . .
 RUN npm_config_target_arch=${TARGETARCH} yarn --network-timeout 600000
 
 ARG NODE_ENV=production
+ARG VITE_APP_PERSISTENT_DRAWINGS_API_URL
+
+# Pass VITE environment variables to build
+ENV VITE_APP_PERSISTENT_DRAWINGS_API_URL=${VITE_APP_PERSISTENT_DRAWINGS_API_URL}
 
 RUN npm_config_target_arch=${TARGETARCH} yarn build:app:docker
 

@@ -38,6 +38,8 @@ interface ImportMetaEnv {
 
   VITE_APP_GIT_SHA: string;
 
+  VITE_APP_PERSISTENT_DRAWINGS_API_URL: string;
+
   MODE: string;
 
   DEV: string;
