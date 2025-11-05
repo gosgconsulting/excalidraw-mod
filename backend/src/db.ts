@@ -88,6 +88,33 @@ export const initDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_drawings_updated_at ON drawings(updated_at);
     `);
 
+    // Create files table for storing encrypted image files
+    await query(`
+      CREATE TABLE IF NOT EXISTS files (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        drawing_slug VARCHAR(255) NOT NULL,
+        file_id VARCHAR(255) NOT NULL,
+        encrypted_data BYTEA NOT NULL,
+        encryption_key VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(drawing_slug, file_id),
+        FOREIGN KEY (drawing_slug) REFERENCES drawings(slug) ON DELETE CASCADE
+      );
+    `);
+
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_files_drawing_slug ON files(drawing_slug);
+    `);
+
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_files_file_id ON files(file_id);
+    `);
+
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_files_drawing_slug_file_id ON files(drawing_slug, file_id);
+    `);
+
     console.log("[testing] Database initialized successfully");
   } catch (error) {
     console.error("[testing] Database initialization error", error);

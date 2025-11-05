@@ -19,7 +19,7 @@ import type {
 import { FILE_UPLOAD_MAX_BYTES } from "../app_constants";
 
 import { encodeFilesForUpload } from "./FileManager";
-import { saveFilesToFirebase, loadFilesFromFirebase } from "./firebase";
+import { saveFilesToBackend, loadFilesFromBackend } from "./backendFiles";
 
 const API_BASE_URL =
   import.meta.env.VITE_APP_PERSISTENT_DRAWINGS_API_URL ||
@@ -112,21 +112,71 @@ export const createPersistentDrawing = async (
       String.fromCharCode(...new Uint8Array(payload.buffer)),
     );
 
-    // Upload files to Firebase Storage
+    // Collect and validate files for upload to backend
+    // eslint-disable-next-line no-console
+    console.log("[testing] Starting file collection", {
+      totalElements: elements.length,
+      filesParameterSize: Object.keys(files).length,
+    });
+
     const filesMap = new Map<FileId, BinaryFileData>();
+    const imageElementsCount = elements.filter((el) =>
+      isInitializedImageElement(el),
+    ).length;
+    // eslint-disable-next-line no-console
+    console.log("[testing] Found image elements", {
+      count: imageElementsCount,
+    });
+
     for (const element of elements) {
       if (isInitializedImageElement(element)) {
         const fileId = element.fileId;
-        if (fileId && files[fileId]) {
-          filesMap.set(fileId, files[fileId]);
+        if (fileId) {
+          if (files[fileId]) {
+            const fileData = files[fileId];
+            filesMap.set(fileId, fileData);
+            const fileSize = fileData.dataURL
+              ? new TextEncoder().encode(fileData.dataURL).length
+              : 0;
+            // eslint-disable-next-line no-console
+            console.log("[testing] Collected file", {
+              fileId,
+              mimeType: fileData.mimeType,
+              size: fileSize,
+            });
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn(
+              "[testing] Image element has fileId but file not found in files map",
+              { fileId },
+            );
+          }
         }
       }
+    }
+
+    // eslint-disable-next-line no-console
+    console.log("[testing] Files collected", {
+      totalCollected: filesMap.size,
+      expected: imageElementsCount,
+    });
+
+    if (filesMap.size === 0 && imageElementsCount > 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[testing] Warning: Found image elements but no files collected",
+      );
     }
 
     const filesToUpload = await encodeFilesForUpload({
       files: filesMap,
       encryptionKey,
       maxBytes: FILE_UPLOAD_MAX_BYTES,
+    });
+
+    // eslint-disable-next-line no-console
+    console.log("[testing] Files encoded for upload", {
+      count: filesToUpload.length,
     });
 
     // Create drawing in database
@@ -158,19 +208,77 @@ export const createPersistentDrawing = async (
 
     const json = await response.json();
 
-    // Save files to Firebase Storage
-    try {
-      await saveFilesToFirebase({
-        prefix: `/files/persistentDrawings/${slug}`,
-        files: filesToUpload,
+    // Save files to backend API
+    if (filesToUpload.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log("[testing] Starting file upload to backend", {
+        slug,
+        fileCount: filesToUpload.length,
       });
-    } catch (firebaseError: any) {
-      console.error("[testing] Error saving files to Firebase", firebaseError);
-      // Return error but note that drawing was created in DB
-      return {
-        success: false,
-        errorMessage: "Could not create persistent link",
-      };
+
+      try {
+        const uploadResult = await saveFilesToBackend({
+          slug,
+          files: filesToUpload,
+          encryptionKey,
+        });
+
+        // eslint-disable-next-line no-console
+        console.log("[testing] File upload results", {
+          savedFiles: uploadResult.savedFiles.length,
+          erroredFiles: uploadResult.erroredFiles.length,
+          savedFileIds: uploadResult.savedFiles,
+          erroredFileIds: uploadResult.erroredFiles,
+        });
+
+        if (uploadResult.erroredFiles.length > 0) {
+          // eslint-disable-next-line no-console
+          console.error(
+            "[testing] Some files failed to upload",
+            uploadResult.erroredFiles,
+          );
+          return {
+            success: false,
+            errorMessage: `Failed to upload ${
+              uploadResult.erroredFiles.length
+            } file(s): ${uploadResult.erroredFiles.join(", ")}`,
+          };
+        }
+
+        if (uploadResult.savedFiles.length !== filesToUpload.length) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            "[testing] Mismatch between files to upload and saved files",
+            {
+              expected: filesToUpload.length,
+              saved: uploadResult.savedFiles.length,
+            },
+          );
+          return {
+            success: false,
+            errorMessage: "Not all files were uploaded successfully",
+          };
+        }
+
+        // eslint-disable-next-line no-console
+        console.log("[testing] All files uploaded successfully");
+      } catch (backendError: any) {
+        // eslint-disable-next-line no-console
+        console.error(
+          "[testing] Error saving files to backend",
+          backendError,
+        );
+        // Return error but note that drawing was created in DB
+        return {
+          success: false,
+          errorMessage: `Could not upload files to backend: ${
+            backendError.message || "Unknown error"
+          }`,
+        };
+      }
+    } else {
+      // eslint-disable-next-line no-console
+      console.log("[testing] No files to upload");
     }
 
     const url = new URL(window.location.href);
@@ -218,21 +326,71 @@ export const updatePersistentDrawing = async (
       String.fromCharCode(...new Uint8Array(payload.buffer)),
     );
 
-    // Upload files to Firebase Storage
+    // Collect and validate files for upload to backend
+    // eslint-disable-next-line no-console
+    console.log("[testing] Starting file collection (update)", {
+      totalElements: elements.length,
+      filesParameterSize: Object.keys(files).length,
+    });
+
     const filesMap = new Map<FileId, BinaryFileData>();
+    const imageElementsCount = elements.filter((el) =>
+      isInitializedImageElement(el),
+    ).length;
+    // eslint-disable-next-line no-console
+    console.log("[testing] Found image elements (update)", {
+      count: imageElementsCount,
+    });
+
     for (const element of elements) {
       if (isInitializedImageElement(element)) {
         const fileId = element.fileId;
-        if (fileId && files[fileId]) {
-          filesMap.set(fileId, files[fileId]);
+        if (fileId) {
+          if (files[fileId]) {
+            const fileData = files[fileId];
+            filesMap.set(fileId, fileData);
+            const fileSize = fileData.dataURL
+              ? new TextEncoder().encode(fileData.dataURL).length
+              : 0;
+            // eslint-disable-next-line no-console
+            console.log("[testing] Collected file (update)", {
+              fileId,
+              mimeType: fileData.mimeType,
+              size: fileSize,
+            });
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn(
+              "[testing] Image element has fileId but file not found in files map (update)",
+              { fileId },
+            );
+          }
         }
       }
+    }
+
+    // eslint-disable-next-line no-console
+    console.log("[testing] Files collected (update)", {
+      totalCollected: filesMap.size,
+      expected: imageElementsCount,
+    });
+
+    if (filesMap.size === 0 && imageElementsCount > 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[testing] Warning: Found image elements but no files collected (update)",
+      );
     }
 
     const filesToUpload = await encodeFilesForUpload({
       files: filesMap,
       encryptionKey,
       maxBytes: FILE_UPLOAD_MAX_BYTES,
+    });
+
+    // eslint-disable-next-line no-console
+    console.log("[testing] Files encoded for upload (update)", {
+      count: filesToUpload.length,
     });
 
     // Update drawing in database
@@ -261,23 +419,82 @@ export const updatePersistentDrawing = async (
       };
     }
 
-    // Save files to Firebase Storage
-    try {
-      await saveFilesToFirebase({
-        prefix: `/files/persistentDrawings/${slug}`,
-        files: filesToUpload,
+    // Save files to backend API
+    if (filesToUpload.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log("[testing] Starting file upload to backend (update)", {
+        slug,
+        fileCount: filesToUpload.length,
       });
-    } catch (firebaseError: any) {
-      console.error("[testing] Error saving files to Firebase", firebaseError);
-      // Return error but note that drawing was updated in DB
-      return {
-        success: false,
-        errorMessage: "Could not update persistent link",
-      };
+
+      try {
+        const uploadResult = await saveFilesToBackend({
+          slug,
+          files: filesToUpload,
+          encryptionKey,
+        });
+
+        // eslint-disable-next-line no-console
+        console.log("[testing] File upload results (update)", {
+          savedFiles: uploadResult.savedFiles.length,
+          erroredFiles: uploadResult.erroredFiles.length,
+          savedFileIds: uploadResult.savedFiles,
+          erroredFileIds: uploadResult.erroredFiles,
+        });
+
+        if (uploadResult.erroredFiles.length > 0) {
+          // eslint-disable-next-line no-console
+          console.error(
+            "[testing] Some files failed to upload (update)",
+            uploadResult.erroredFiles,
+          );
+          return {
+            success: false,
+            errorMessage: `Failed to upload ${
+              uploadResult.erroredFiles.length
+            } file(s): ${uploadResult.erroredFiles.join(", ")}`,
+          };
+        }
+
+        if (uploadResult.savedFiles.length !== filesToUpload.length) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            "[testing] Mismatch between files to upload and saved files (update)",
+            {
+              expected: filesToUpload.length,
+              saved: uploadResult.savedFiles.length,
+            },
+          );
+          return {
+            success: false,
+            errorMessage: "Not all files were uploaded successfully",
+          };
+        }
+
+        // eslint-disable-next-line no-console
+        console.log("[testing] All files uploaded successfully (update)");
+      } catch (backendError: any) {
+        // eslint-disable-next-line no-console
+        console.error(
+          "[testing] Error saving files to backend (update)",
+          backendError,
+        );
+        // Return error but note that drawing was updated in DB
+        return {
+          success: false,
+          errorMessage: `Could not upload files to backend: ${
+            backendError.message || "Unknown error"
+          }`,
+        };
+      }
+    } else {
+      // eslint-disable-next-line no-console
+      console.log("[testing] No files to upload (update)");
     }
 
     return { success: true };
   } catch (error: any) {
+    // eslint-disable-next-line no-console
     console.error("[testing] Error updating persistent drawing", error);
     return {
       success: false,
@@ -340,7 +557,7 @@ export const loadPersistentDrawing = async (
       },
     );
 
-    // Load files from Firebase Storage
+    // Load files from backend API
     const fileIds: FileId[] = [];
     for (const element of restored.elements || []) {
       if (isInitializedImageElement(element) && element.fileId) {
@@ -348,25 +565,71 @@ export const loadPersistentDrawing = async (
       }
     }
 
+    // eslint-disable-next-line no-console
+    console.log("[testing] Starting file loading", {
+      fileIdsCount: fileIds.length,
+      fileIds,
+    });
+
     let files: BinaryFiles = restored.files || {};
     if (fileIds.length > 0) {
       try {
-        const { loadedFiles } = await loadFilesFromFirebase(
-          `/files/persistentDrawings/${slug}`,
+        const { loadedFiles, erroredFiles } = await loadFilesFromBackend(
+          slug,
           json.encryption_key,
           fileIds,
         );
+
+        // eslint-disable-next-line no-console
+        console.log("[testing] File loading results", {
+          loadedFiles: loadedFiles.length,
+          erroredFiles: erroredFiles.size,
+          expected: fileIds.length,
+          loadedFileIds: loadedFiles.map((f) => f.id),
+          erroredFileIds: Array.from(erroredFiles.keys()),
+        });
+
+        if (loadedFiles.length !== fileIds.length) {
+          // eslint-disable-next-line no-console
+          console.warn("[testing] Mismatch between expected and loaded files", {
+            expected: fileIds.length,
+            loaded: loadedFiles.length,
+            errored: erroredFiles.size,
+          });
+        }
+
+        if (erroredFiles.size > 0) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            "[testing] Some files failed to load",
+            Array.from(erroredFiles.keys()),
+          );
+        }
 
         // Merge loaded files into restored.files
         const filesObj: BinaryFiles = { ...files };
         loadedFiles.forEach((file) => {
           filesObj[file.id] = file;
+          // eslint-disable-next-line no-console
+          console.log("[testing] Loaded file", {
+            fileId: file.id,
+            mimeType: file.mimeType,
+          });
         });
         files = filesObj;
+
+        // eslint-disable-next-line no-console
+        console.log("[testing] File loading completed", {
+          totalFiles: Object.keys(files).length,
+        });
       } catch (error: any) {
-        console.error("[testing] Error loading files from Firebase", error);
+        // eslint-disable-next-line no-console
+        console.error("[testing] Error loading files from backend", error);
         // Continue without files rather than failing completely
       }
+    } else {
+      // eslint-disable-next-line no-console
+      console.log("[testing] No files to load");
     }
 
     return {
