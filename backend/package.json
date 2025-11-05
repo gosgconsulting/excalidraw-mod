@@ -1,6 +1,6 @@
 {
   "name": "excalidraw-backend",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Backend API for persistent Excalidraw drawings",
   "main": "dist/server.js",
   "scripts": {
