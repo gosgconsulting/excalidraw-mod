@@ -28,12 +28,19 @@ export const saveFilesToBackend = async ({
   const savedFiles: FileId[] = [];
 
   // Convert Uint8Array buffers to base64 for API
-  const filesForUpload = files.map((file) => ({
-    id: file.id,
-    buffer: btoa(
-      String.fromCharCode(...new Uint8Array(file.buffer)),
-    ),
-  }));
+  // Use a safer method that doesn't spread large arrays as function arguments
+  const filesForUpload = files.map((file) => {
+    const uint8Array = new Uint8Array(file.buffer);
+    // Build binary string character by character to avoid function argument limits
+    let binaryString = "";
+    for (let i = 0; i < uint8Array.length; i++) {
+      binaryString += String.fromCharCode(uint8Array[i]);
+    }
+    return {
+      id: file.id,
+      buffer: btoa(binaryString),
+    };
+  });
 
   try {
     const response = await fetch(`${API_BASE_URL}/drawings/${slug}/files`, {

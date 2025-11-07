@@ -51,30 +51,17 @@ router.post(
           // Convert base64 buffer to Uint8Array then to Buffer
           const fileBuffer = Buffer.from(buffer, "base64");
 
-          // Check if file already exists (upsert)
-          const existing = await query<{ id: string }>(
-            "SELECT id FROM files WHERE drawing_slug = $1 AND file_id = $2",
-            [slug, id],
+          // Upsert using ON CONFLICT
+          await query(
+            `INSERT INTO files (drawing_slug, file_id, encrypted_data, encryption_key)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (drawing_slug, file_id)
+             DO UPDATE SET 
+               encrypted_data = EXCLUDED.encrypted_data,
+               encryption_key = EXCLUDED.encryption_key,
+               updated_at = CURRENT_TIMESTAMP`,
+            [slug, id, fileBuffer, encryption_key],
           );
-
-          if (existing.length > 0) {
-            // Update existing file
-            await query(
-              `UPDATE files 
-               SET encrypted_data = $1, 
-                   encryption_key = $2,
-                   updated_at = NOW()
-               WHERE drawing_slug = $3 AND file_id = $4`,
-              [fileBuffer, encryption_key, slug, id],
-            );
-          } else {
-            // Insert new file
-            await query(
-              `INSERT INTO files (drawing_slug, file_id, encrypted_data, encryption_key)
-               VALUES ($1, $2, $3, $4)`,
-              [slug, id, fileBuffer, encryption_key],
-            );
-          }
 
           savedFiles.push(id);
         } catch (error: any) {
