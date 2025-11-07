@@ -264,10 +264,7 @@ export const createPersistentDrawing = async (
         console.log("[testing] All files uploaded successfully");
       } catch (backendError: any) {
         // eslint-disable-next-line no-console
-        console.error(
-          "[testing] Error saving files to backend",
-          backendError,
-        );
+        console.error("[testing] Error saving files to backend", backendError);
         // Return error but note that drawing was created in DB
         return {
           success: false,
