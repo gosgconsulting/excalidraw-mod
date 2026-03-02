@@ -25,6 +25,21 @@ const API_BASE_URL =
   import.meta.env.VITE_APP_PERSISTENT_DRAWINGS_API_URL ||
   "http://localhost:4000/api";
 
+/**
+ * Converts binary data into base64 without spreading a large array.
+ */
+const uint8ArrayToBase64 = (bytes: Uint8Array): string => {
+  const CHUNK_SIZE = 0x8000;
+  let binaryString = "";
+
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const chunk = bytes.subarray(i, i + CHUNK_SIZE);
+    binaryString += String.fromCharCode(...chunk);
+  }
+
+  return btoa(binaryString);
+};
+
 export interface PersistentDrawingResult {
   slug: string;
   url: string;
@@ -102,15 +117,14 @@ export const createPersistentDrawing = async (
     // Compress and encrypt the drawing data
     const payload = await compressData(
       new TextEncoder().encode(
-        serializeAsJSON(elements, appState, files, "database"),
+        // Files are uploaded separately; keep drawing payload compact.
+        serializeAsJSON(elements, appState, {}, "database"),
       ),
       { encryptionKey },
     );
 
     // Convert to base64 for API
-    const base64Data = btoa(
-      String.fromCharCode(...new Uint8Array(payload.buffer)),
-    );
+    const base64Data = uint8ArrayToBase64(new Uint8Array(payload.buffer));
 
     // Collect and validate files for upload to backend
     // eslint-disable-next-line no-console
@@ -313,15 +327,14 @@ export const updatePersistentDrawing = async (
     // Compress and encrypt the drawing data
     const payload = await compressData(
       new TextEncoder().encode(
-        serializeAsJSON(elements, appState, files, "database"),
+        // Files are uploaded separately; keep drawing payload compact.
+        serializeAsJSON(elements, appState, {}, "database"),
       ),
       { encryptionKey },
     );
 
     // Convert to base64 for API
-    const base64Data = btoa(
-      String.fromCharCode(...new Uint8Array(payload.buffer)),
-    );
+    const base64Data = uint8ArrayToBase64(new Uint8Array(payload.buffer));
 
     // Collect and validate files for upload to backend
     // eslint-disable-next-line no-console

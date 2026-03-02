@@ -12,6 +12,8 @@ const API_BASE_URL =
   import.meta.env.VITE_APP_PERSISTENT_DRAWINGS_API_URL ||
   "http://localhost:4000/api";
 
+const FILE_UPLOAD_BATCH_MAX_BYTES = 32 * 1024 * 1024; // 32 MiB
+
 /**
  * Save files to backend API
  */
@@ -42,14 +44,14 @@ export const saveFilesToBackend = async ({
     };
   });
 
-  try {
+  const uploadBatch = async (batch: { id: FileId; buffer: string }[]) => {
     const response = await fetch(`${API_BASE_URL}/drawings/${slug}/files`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        files: filesForUpload,
+        files: batch,
         encryption_key: encryptionKey,
       }),
     });
@@ -60,10 +62,33 @@ export const saveFilesToBackend = async ({
     }
 
     const result = await response.json();
+    savedFiles.push(...(result.savedFiles || []));
+    erroredFiles.push(...(result.erroredFiles || []));
+  };
 
-    // Map results back to our format
-    savedFiles.push(...result.savedFiles);
-    erroredFiles.push(...result.erroredFiles);
+  try {
+    let currentBatch: { id: FileId; buffer: string }[] = [];
+    let currentBatchSize = 0;
+
+    for (const file of filesForUpload) {
+      const fileSize = file.buffer.length;
+      const exceedsCurrentBatchLimit =
+        currentBatch.length > 0 &&
+        currentBatchSize + fileSize > FILE_UPLOAD_BATCH_MAX_BYTES;
+
+      if (exceedsCurrentBatchLimit) {
+        await uploadBatch(currentBatch);
+        currentBatch = [];
+        currentBatchSize = 0;
+      }
+
+      currentBatch.push(file);
+      currentBatchSize += fileSize;
+    }
+
+    if (currentBatch.length > 0) {
+      await uploadBatch(currentBatch);
+    }
   } catch (error: any) {
     // eslint-disable-next-line no-console
     console.error("[testing] Error saving files to backend", error);

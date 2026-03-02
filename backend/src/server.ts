@@ -39,9 +39,9 @@ app.use(
   }),
 );
 
-// Increased limit for file uploads (50mb should be enough for multiple images)
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+// Allow larger drawing/file payloads (base64 JSON adds overhead vs raw bytes).
+app.use(express.json({ limit: "200mb" }));
+app.use(express.urlencoded({ extended: true, limit: "200mb" }));
 
 // Health check
 app.get("/health", (req, res) => {
