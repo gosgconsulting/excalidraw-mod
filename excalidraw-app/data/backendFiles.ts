@@ -1,5 +1,6 @@
 import { decompressData } from "@excalidraw/excalidraw/data/encode";
 import { MIME_TYPES } from "@excalidraw/common";
+import { uint8ArrayToBase64 } from "./persistentDrawings";
 
 import type { FileId } from "@excalidraw/element/types";
 import type {
@@ -12,7 +13,7 @@ const API_BASE_URL =
   import.meta.env.VITE_APP_PERSISTENT_DRAWINGS_API_URL ||
   "http://localhost:4000/api";
 
-const FILE_UPLOAD_BATCH_MAX_BYTES = 32 * 1024 * 1024; // 32 MiB
+const FILE_UPLOAD_BATCH_MAX_BYTES = 5 * 1024 * 1024; // 5 MiB
 
 /**
  * Save files to backend API
@@ -33,14 +34,9 @@ export const saveFilesToBackend = async ({
   // Use a safer method that doesn't spread large arrays as function arguments
   const filesForUpload = files.map((file) => {
     const uint8Array = new Uint8Array(file.buffer);
-    // Build binary string character by character to avoid function argument limits
-    let binaryString = "";
-    for (let i = 0; i < uint8Array.length; i++) {
-      binaryString += String.fromCharCode(uint8Array[i]);
-    }
     return {
       id: file.id,
-      buffer: btoa(binaryString),
+      buffer: uint8ArrayToBase64(uint8Array),
     };
   });
 

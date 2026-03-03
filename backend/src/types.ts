@@ -23,8 +23,8 @@ export interface UpdateDrawingRequest {
 export interface DrawingResponse {
   id: string;
   slug: string;
-  encrypted_data: string; // base64 encoded
-  encryption_key: string;
+  encrypted_data?: string; // base64 encoded
+  encryption_key?: string;
   version: number;
   created_at: string;
   updated_at: string;

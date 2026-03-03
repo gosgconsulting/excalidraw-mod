@@ -131,8 +131,6 @@ router.post(
       const response: DrawingResponse = {
         id: drawing.id,
         slug: drawing.slug,
-        encrypted_data,
-        encryption_key,
         version: drawing.version,
         created_at: drawing.created_at.toISOString(),
         updated_at: drawing.updated_at.toISOString(),
@@ -193,8 +191,6 @@ router.put(
       const response: DrawingResponse = {
         id: drawing.id,
         slug: drawing.slug,
-        encrypted_data,
-        encryption_key,
         version: drawing.version,
         created_at: drawing.created_at.toISOString(),
         updated_at: drawing.updated_at.toISOString(),

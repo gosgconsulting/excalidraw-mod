@@ -28,7 +28,7 @@ const API_BASE_URL =
 /**
  * Converts binary data into base64 without spreading a large array.
  */
-const uint8ArrayToBase64 = (bytes: Uint8Array): string => {
+export const uint8ArrayToBase64 = (bytes: Uint8Array): string => {
   const CHUNK_SIZE = 0x8000;
   let binaryString = "";
 
@@ -253,9 +253,8 @@ export const createPersistentDrawing = async (
           );
           return {
             success: false,
-            errorMessage: `Failed to upload ${
-              uploadResult.erroredFiles.length
-            } file(s): ${uploadResult.erroredFiles.join(", ")}`,
+            errorMessage: `Failed to upload ${uploadResult.erroredFiles.length
+              } file(s): ${uploadResult.erroredFiles.join(", ")}`,
           };
         }
 
@@ -282,9 +281,8 @@ export const createPersistentDrawing = async (
         // Return error but note that drawing was created in DB
         return {
           success: false,
-          errorMessage: `Could not upload files to backend: ${
-            backendError.message || "Unknown error"
-          }`,
+          errorMessage: `Could not upload files to backend: ${backendError.message || "Unknown error"
+            }`,
         };
       }
     } else {
@@ -460,9 +458,8 @@ export const updatePersistentDrawing = async (
           );
           return {
             success: false,
-            errorMessage: `Failed to upload ${
-              uploadResult.erroredFiles.length
-            } file(s): ${uploadResult.erroredFiles.join(", ")}`,
+            errorMessage: `Failed to upload ${uploadResult.erroredFiles.length
+              } file(s): ${uploadResult.erroredFiles.join(", ")}`,
           };
         }
 
@@ -492,9 +489,8 @@ export const updatePersistentDrawing = async (
         // Return error but note that drawing was updated in DB
         return {
           success: false,
-          errorMessage: `Could not upload files to backend: ${
-            backendError.message || "Unknown error"
-          }`,
+          errorMessage: `Could not upload files to backend: ${backendError.message || "Unknown error"
+            }`,
         };
       }
     } else {
