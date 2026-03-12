@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import { initDatabase } from "./db";
 import drawingsRouter from "./routes/drawings";
 import filesRouter from "./routes/files";
+import shareLinksRouter from "./routes/shareLinks";
 
 // Load .env from backend directory
 dotenv.config({
@@ -51,6 +52,24 @@ app.get("/health", (req, res) => {
 // API routes
 app.use("/api/drawings", drawingsRouter);
 app.use("/api/drawings", filesRouter);
+
+// Share links: the POST endpoint receives a raw binary payload, so we apply
+// express.raw() only for that route before handing off to the router.
+app.use(
+  "/api/share",
+  (req, res, next) => {
+    if (req.method === "POST" && req.path === "/") {
+      express.raw({ type: "application/octet-stream", limit: "10mb" })(
+        req,
+        res,
+        next,
+      );
+    } else {
+      next();
+    }
+  },
+  shareLinksRouter,
+);
 
 // Error handling middleware
 app.use(

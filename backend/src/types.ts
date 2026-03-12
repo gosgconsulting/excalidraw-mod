@@ -29,3 +29,26 @@ export interface DrawingResponse {
   created_at: string;
   updated_at: string;
 }
+
+export interface ShareLink {
+  id: string;
+  data: Buffer;
+  created_at: Date;
+}
+
+export interface ShareLinkFile {
+  id: string;
+  share_link_id: string;
+  file_id: string;
+  data: Buffer;
+  created_at: Date;
+}
+
+export interface ShareLinkResponse {
+  id: string;
+}
+
+export interface ShareLinkFileItem {
+  id: string;
+  buffer: string; // base64 encoded
+}
