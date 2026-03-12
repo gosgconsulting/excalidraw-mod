@@ -59,7 +59,7 @@ app.use(
   "/api/share",
   (req, res, next) => {
     if (req.method === "POST" && req.path === "/") {
-      express.raw({ type: "application/octet-stream", limit: "10mb" })(
+      express.raw({ type: "*/*", limit: "64mb" })(
         req,
         res,
         next,

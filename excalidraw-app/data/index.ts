@@ -316,6 +316,7 @@ export const exportToBackend = async (
 
     const response = await fetch(SHARE_API_URL, {
       method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
       body: payload.buffer as ArrayBuffer,
     });
     const json = await response.json();
