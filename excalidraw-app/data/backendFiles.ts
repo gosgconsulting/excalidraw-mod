@@ -13,6 +13,7 @@ const API_BASE_URL =
   import.meta.env.VITE_APP_PERSISTENT_DRAWINGS_API_URL ||
   "http://localhost:4000/api";
 
+
 const FILE_UPLOAD_BATCH_MAX_BYTES = 5 * 1024 * 1024; // 5 MiB
 
 /**
@@ -185,6 +186,67 @@ export const loadFilesFromBackend = async (
       erroredFiles.set(id, true);
     });
   }
+
+  return { loadedFiles, erroredFiles };
+};
+
+/**
+ * Load files for a share link from our backend.
+ * Files are encrypted with the same key as the scene (stored client-side in
+ * the URL hash), so no per-file encryption key is needed.
+ */
+export const loadShareLinkFiles = async (
+  shareLinkId: string,
+  decryptionKey: string,
+  fileIds: readonly FileId[],
+) => {
+  const loadedFiles: BinaryFileData[] = [];
+  const erroredFiles = new Map<FileId, true>();
+
+  if (fileIds.length === 0) {
+    return { loadedFiles, erroredFiles };
+  }
+
+  await Promise.all(
+    [...new Set(fileIds)].map(async (fileId) => {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/share/${shareLinkId}/files/${fileId}`,
+        );
+
+        if (!response.ok) {
+          erroredFiles.set(fileId, true);
+          return;
+        }
+
+        const result = await response.json();
+
+        const binaryString = atob(result.buffer);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const { data, metadata } = await decompressData<BinaryFileMetadata>(
+          bytes,
+          { decryptionKey },
+        );
+
+        const dataURL = new TextDecoder().decode(data) as DataURL;
+
+        loadedFiles.push({
+          mimeType: metadata.mimeType || MIME_TYPES.binary,
+          id: fileId,
+          dataURL,
+          created: metadata?.created || Date.now(),
+          lastRetrieved: metadata?.created || Date.now(),
+        });
+      } catch (error: any) {
+        console.error(`[share] Error loading share link file ${fileId}:`, error);
+        erroredFiles.set(fileId, true);
+      }
+    }),
+  );
 
   return { loadedFiles, erroredFiles };
 };

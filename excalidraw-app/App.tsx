@@ -83,7 +83,6 @@ import {
   appJotaiStore,
 } from "./app-jotai";
 import {
-  FIREBASE_STORAGE_PREFIXES,
   isExcalidrawPlusSignedUser,
   STORAGE_KEYS,
   SYNC_BROWSER_TABS_TIMEOUT,
@@ -117,6 +116,7 @@ import {
 } from "./data/localStorage";
 
 import { loadFilesFromFirebase } from "./data/firebase";
+import { loadShareLinkFiles } from "./data/backendFiles";
 import {
   LibraryIndexedDBAdapter,
   LibraryLocalStorageMigrationAdapter,
@@ -503,18 +503,16 @@ const ExcalidrawWrapper = () => {
           }, [] as FileId[]) || [];
 
         if (data.isExternalScene) {
-          loadFilesFromFirebase(
-            `${FIREBASE_STORAGE_PREFIXES.shareLinkFiles}/${data.id}`,
-            data.key,
-            fileIds,
-          ).then(({ loadedFiles, erroredFiles }) => {
-            excalidrawAPI.addFiles(loadedFiles);
-            updateStaleImageStatuses({
-              excalidrawAPI,
-              erroredFiles,
-              elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
-            });
-          });
+          loadShareLinkFiles(data.id!, data.key!, fileIds).then(
+            ({ loadedFiles, erroredFiles }) => {
+              excalidrawAPI.addFiles(loadedFiles);
+              updateStaleImageStatuses({
+                excalidrawAPI,
+                erroredFiles,
+                elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
+              });
+            },
+          );
         } else if (isInitialLoad) {
           if (fileIds.length) {
             LocalData.fileStorage

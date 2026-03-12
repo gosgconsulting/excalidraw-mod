@@ -37,7 +37,7 @@ import {
 } from "../app_constants";
 
 import { encodeFilesForUpload } from "./FileManager";
-import { saveFilesToFirebase } from "./firebase";
+import { uint8ArrayToBase64 } from "./persistentDrawings";
 
 import type { WS_SUBTYPES } from "../app_constants";
 
@@ -63,8 +63,9 @@ export const getSyncableElements = (
     isSyncableElement(element),
   ) as SyncableExcalidrawElement[];
 
-const BACKEND_V2_GET = import.meta.env.VITE_APP_BACKEND_V2_GET_URL;
-const BACKEND_V2_POST = import.meta.env.VITE_APP_BACKEND_V2_POST_URL;
+const SHARE_API_URL = `${
+  import.meta.env.VITE_APP_PERSISTENT_DRAWINGS_API_URL || "http://localhost:4000/api"
+}/share/`;
 
 const generateRoomId = async () => {
   const buffer = new Uint8Array(ROOM_ID_BYTES);
@@ -205,7 +206,7 @@ const importFromBackend = async (
   decryptionKey: string,
 ): Promise<ImportedDataState> => {
   try {
-    const response = await fetch(`${BACKEND_V2_GET}${id}`);
+    const response = await fetch(`${SHARE_API_URL}${id}`);
 
     if (!response.ok) {
       window.alert(t("alerts.importBackendFailed"));
@@ -313,9 +314,9 @@ export const exportToBackend = async (
       maxBytes: FILE_UPLOAD_MAX_BYTES,
     });
 
-    const response = await fetch(BACKEND_V2_POST, {
+    const response = await fetch(SHARE_API_URL, {
       method: "POST",
-      body: payload.buffer,
+      body: payload.buffer as ArrayBuffer,
     });
     const json = await response.json();
     if (json.id) {
@@ -325,10 +326,17 @@ export const exportToBackend = async (
       url.hash = `json=${json.id},${encryptionKey}`;
       const urlString = url.toString();
 
-      await saveFilesToFirebase({
-        prefix: `/files/shareLinks/${json.id}`,
-        files: filesToUpload,
-      });
+      if (filesToUpload.length > 0) {
+        const filesForUpload = filesToUpload.map((file) => ({
+          id: file.id,
+          buffer: uint8ArrayToBase64(new Uint8Array(file.buffer)),
+        }));
+        await fetch(`${SHARE_API_URL}${json.id}/files`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ files: filesForUpload }),
+        });
+      }
 
       return { url: urlString, errorMessage: null };
     } else if (json.error_class === "RequestTooLargeError") {
